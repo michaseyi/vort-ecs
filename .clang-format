@@ -1,9 +1,13 @@
-BasedOnStyle: Google
-UseTab: Never
+Language: Cpp
 IndentWidth: 4
-TabWidth: 4
-BreakBeforeBraces: Attach
-AllowShortIfStatementsOnASingleLine: false
+PointerAlignment: Left
+BreakBeforeBraces: Custom
+BraceWrapping: { AfterFunction: false, AfterControlStatement: false }
 IndentCaseLabels: false
+ReflowComments: false
+ColumnLimit: 120
 AccessModifierOffset: -4
-ColumnLimit: 130
+AlignTrailingComments: true
+AllowShortBlocksOnASingleLine: false
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
