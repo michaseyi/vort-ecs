@@ -1,9 +1,10 @@
 #pragma once
 
-#include "component_storage.hpp"
 #include <functional>
 #include <iostream>
 #include <vector>
+
+#include "component_storage.hpp"
 
 class ErasedComponentStorage {
 public:
@@ -15,7 +16,7 @@ public:
     ErasedComponentStorage() = default;
 
     ErasedComponentStorage(void* rawPtr, Deleter deleter, Cloner cloner, Copier copier, Remover remover)
-        : mRaw(rawPtr), deleter(deleter), cloner(cloner), copier(copier), remover(remover) {}
+        : mRaw(rawPtr), mDeleter(deleter), mCloner(cloner), mCopier(copier), mRemover(remover) {}
 
     ErasedComponentStorage(ErasedComponentStorage&& rhs);
 
@@ -23,9 +24,11 @@ public:
 
     ~ErasedComponentStorage();
 
-    template <typename T> ComponentStorage<T>* cast();
+    template <typename T>
+    ComponentStorage<T>* cast();
 
-    template <typename T> static ErasedComponentStorage create();
+    template <typename T>
+    static ErasedComponentStorage create();
 
     void copyFrom(u_int32_t srcRow, u_int32_t dstRow, ErasedComponentStorage& src);
 
@@ -34,11 +37,11 @@ public:
     void cloneTo(ErasedComponentStorage& retval);
 
 private:
-    Deleter deleter;
-    Cloner cloner;
-    Copier copier;
-    Remover remover;
     void* mRaw = nullptr;
+    Deleter mDeleter;
+    Cloner mCloner;
+    Copier mCopier;
+    Remover mRemover;
 };
 
 #define ERASED_COMPONENT_STORAGE_TEMPLATE_IMPL

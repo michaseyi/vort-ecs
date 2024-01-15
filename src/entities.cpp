@@ -1,9 +1,71 @@
 #include "entities.hpp"
+
+#if defined(EMSCRIPTEN)
+#include <emscripten/emscripten.h>
+#endif
+
 #include <set>
 
 #ifdef ENTITIES_TEMPLATE_IMPL
 
-template <typename... T> void Entities::setComponents(EntityID entityID, T&&... components) {
+template <typename... T>
+Entities& Entities::addSystems(SystemSchedule) {
+    return *this;
+}
+
+template <typename... Args, typename... Rest>
+Entities& Entities::addSystems(SystemSchedule schedule, System<Args...> system, Rest... rest) {
+    static_assert((std::is_default_constructible_v<std::remove_reference_t<Args>> && ...));
+    auto systemCaller = [this, system]() {
+        auto args = std::make_tuple(std::remove_reference_t<Args>()...);
+
+        (std::get<std::remove_reference_t<Args>>(args).fill(this), ...);
+
+        system(std::get<std::remove_reference_t<Args>>(args)...);
+    };
+
+    switch (schedule) {
+    case SystemSchedule::Startup:
+        mStartupSystems.emplace_back(systemCaller);
+        break;
+    case SystemSchedule::Update:
+        mUpdateSystems.emplace_back(systemCaller);
+        break;
+    case SystemSchedule::Shutdown:
+        mShutdownSystems.emplace_back(systemCaller);
+        break;
+    }
+    addSystems(schedule, rest...);
+    return *this;
+}
+
+template <typename... T>
+void Entities::setGlobal(T... args) {
+    (
+        [&]() {
+            auto index = std::type_index(typeid(T));
+            if (auto iter = mGlobalVariables.find(index); iter != mGlobalVariables.end()) {
+                auto a = iter->second;
+                *(reinterpret_cast<T*>(iter->second.get())) = std::move(args);
+            } else {
+                mGlobalVariables[std::type_index(typeid(T))] = std::make_shared<T>(std::move(args));
+            }
+        }(),
+        ...);
+}
+
+template <typename... T>
+std::tuple<T&...> Entities::getGlobal() {
+    auto hasGlobals = ((mGlobalVariables.find(std::type_index(typeid(T))) != mGlobalVariables.end()) && ...);
+
+    assert(hasGlobals);
+
+    return std::make_tuple<std::reference_wrapper<T>...>(
+        *reinterpret_cast<T*>(mGlobalVariables[std::type_index(typeid(T))].get())...);
+}
+
+template <typename... T>
+void Entities::setComponents(EntityID entityID, T... components) {
     static_assert(sizeof...(T) > 0, "There should be at least one component to be added");
 
     static_assert(UniqueTypes<T...>::value, "Component Types must be unique");
@@ -16,9 +78,8 @@ template <typename... T> void Entities::setComponents(EntityID entityID, T&&... 
     auto rowIndex = entityRowFromID(entityID);
 
     if (entityArchType.hasComponents<T...>()) {
-        (entityArchType.set<T>(rowIndex, components), ...);
+        (entityArchType.set<T>(rowIndex, std::move(components)), ...);
     } else {
-
         // This has to be done incase some of the component to be added already exists in the current archtype
         // of the entity
         auto uniqueComponents = std::set<std::type_index>{std::type_index(typeid(T))...};
@@ -54,7 +115,7 @@ template <typename... T> void Entities::setComponents(EntityID entityID, T&&... 
             newEntityArchtype->getComponent(type)->copyFrom(rowIndex, newRowIndex, *prevArchtype.getComponent(type));
         }
         // copy component values from the input to this method
-        (newEntityArchtype->template set<T>(components), ...);
+        (newEntityArchtype->template set<T>(std::move(components)), ...);
 
         auto archTypeIndex = mArchtypes.denseStorageIndex(newHash);
         auto& ptr = mEntities[entityID];
@@ -70,7 +131,8 @@ template <typename... T> void Entities::setComponents(EntityID entityID, T&&... 
     }
 }
 
-template <typename... T> std::tuple<T...> Entities::getComponents(EntityID entityID) {
+template <typename... T>
+std::tuple<T&...> Entities::getComponents(EntityID entityID) {
     static_assert(sizeof...(T) > 0, "There should be at least one component to be retrieved");
 
     static_assert(UniqueTypes<T...>::value, "Component Types must be unique");
@@ -81,18 +143,11 @@ template <typename... T> std::tuple<T...> Entities::getComponents(EntityID entit
     auto hasComponents = entityArchType.hasComponents<T...>();
     assert(hasComponents);
 
-    std::tuple<T...> result;
-    (
-        [&]() {
-            auto& storage = *entityArchType.components().get(std::type_index(typeid(T)));
-            ComponentStorage<T>& typedStorage = *storage.cast<T>();
-            std::get<T>(result) = typedStorage[rowIndex];
-        }(),
-        ...);
-    return result;
+    return std::make_tuple(std::reference_wrapper<T>(entityArchType.getRow<T>(rowIndex))...);
 }
 
-template <typename... T> void Entities::removeComponents(EntityID entityID) {
+template <typename... T>
+void Entities::removeComponents(EntityID entityID) {
     static_assert(sizeof...(T) > 0, "There should be at least one component to be removed");
 
     static_assert(UniqueTypes<T...>::value, "Component Types must be unique");
@@ -152,7 +207,10 @@ template <typename... T> void Entities::removeComponents(EntityID entityID) {
 }
 #else
 
-Entities::Entities() { mArchtypes.put(Entities::voidArchtypeHash, ArchTypeStorage{}); };
+Entities::Entities() {
+    mArchtypes.put(Entities::voidArchtypeHash, ArchTypeStorage{});
+    setGlobal(Running{true});
+};
 
 EntityID Entities::newEntity() {
     auto newEntityID = mEntityCount++;
@@ -165,10 +223,46 @@ EntityID Entities::newEntity() {
     return newEntityID;
 }
 
-EntityID Entities::newEntity(EntityID parentID) {
-    // TODO
-    return parentID;
+void Entities::update() {
+    for (auto& system : mUpdateSystems) {
+        system();
+    }
 }
+
+void Entities::run() {
+    for (auto& system : mStartupSystems) {
+        system();
+    }
+
+#if defined(EMSCRIPTEN)
+    emscripten_set_main_loop_arg(
+        [](void* userData) {
+            Entities& world = *reinterpret_cast<Entities*>(userData);
+            world.update();
+        },
+        (void*)this, 0, true);
+#else
+    bool running = std::get<0>(getGlobal<Running>()).value;
+
+    while (running) {
+        update();
+        running = std::get<0>(getGlobal<Running>()).value;
+    }
+
+    for (auto& system : mShutdownSystems) {
+        system();
+    }
+
+#endif
+}
+
+// TODO
+EntityID Entities::newEntity(EntityID parentID) { return parentID; }
+
+// TODO
+void Entities::removeEntity(EntityID entityID) { (void)entityID; }
+
+std::vector<ArchTypeStorage>& Entities::archtypes() { return mArchtypes.values(); }
 
 ArchTypeStorage& Entities::archtypeFromEntityID(EntityID entityID) {
     auto entityIter = mEntities.find(entityID);

@@ -4,9 +4,11 @@
 #include <unordered_map>
 #include <vector>
 
-template <typename K, typename V> class ArrayHashMap {
+template <typename K, typename V>
+class ArrayHashMap {
 public:
-    template <typename _K, typename _V> u_int32_t put(_K&& key, _V value) {
+    template <typename _K, typename _V>
+    u_int32_t put(_K&& key, _V value) {
         return _put(std::forward<_K&>(key), std::move(value));
     }
 

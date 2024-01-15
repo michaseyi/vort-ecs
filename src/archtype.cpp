@@ -1,26 +1,32 @@
 #include "archtype.hpp"
 
 #ifdef ARCHTYPE_TEMPLATE_IMPL
-template <typename T> void ArchTypeStorage::set(u_int32_t rowIndex, T& component) {
+template <typename T>
+void ArchTypeStorage::set(u_int32_t rowIndex, T component) {
     assert(mEntityIDs.size() > rowIndex);
 
     auto index = std::type_index(typeid(T));
     auto& storage = *mComponents.get(index);
     ComponentStorage<T>& typedStorage = *storage.cast<T>();
-    typedStorage[rowIndex] = component;
+    typedStorage[rowIndex] = std::move(component);
 }
 
-template <typename T> void ArchTypeStorage::set(T& component) {
+template <typename T>
+void ArchTypeStorage::set(T component) {
     auto index = std::type_index(typeid(T));
     auto& storage = *mComponents.get(index);
     ComponentStorage<T>& typedStorage = *storage.cast<T>();
-    auto row = typedStorage.put(component);
+    auto row = typedStorage.put(std::move(component));
     assert(row == mEntityIDs.size() - 1);
 }
 
-template <typename... T> bool ArchTypeStorage::hasComponents() { return (hasComponent<T>() && ...); }
+template <typename... T>
+bool ArchTypeStorage::hasComponents() {
+    return (hasComponent<T>() && ...);
+}
 
-template <typename... T> ArchTypeStorage ArchTypeStorage::create() {
+template <typename... T>
+ArchTypeStorage ArchTypeStorage::create() {
     auto archType = ArchTypeStorage();
 
     archType.mHash = computeHash<T...>();
@@ -40,15 +46,24 @@ template <typename... T> ArchTypeStorage ArchTypeStorage::create() {
     return archType;
 }
 
-template <typename T> bool ArchTypeStorage::hasComponent() {
+template <typename T>
+bool ArchTypeStorage::hasComponent() {
     auto key = std::type_index(typeid(T));
     return hasComponent(key);
 }
 
-template <typename... T> u_int64_t ArchTypeStorage::computeHash() {
+template <typename... T>
+u_int64_t ArchTypeStorage::computeHash() {
     std::vector<std::type_index> types{std::type_index(typeid(T))...};
     return computeHash(types);
 }
+
+template <typename T>
+T& ArchTypeStorage::getRow(u_int32_t rowIndex) {
+    auto index = std::type_index(typeid(T));
+    return (*getComponent(index)->cast<T>())[rowIndex];
+}
+
 #else
 
 u_int32_t ArchTypeStorage::newRow(EntityID entity) {
@@ -116,7 +131,6 @@ ArchTypeStorage ArchTypeStorage::clone() {
 }
 
 ArchTypeStorage ArchTypeStorage::clone(std::vector<std::type_index>& types) {
-
     for (auto& type : types) {
         assert(hasComponent(type));
     }
