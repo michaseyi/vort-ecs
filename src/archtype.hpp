@@ -1,5 +1,6 @@
 #pragma once
 #include <cassert>
+#include <cstdint>
 #include <iostream>
 #include <typeindex>
 #include <typeinfo>
@@ -9,10 +10,10 @@
 #include "array_hashmap.hpp"
 #include "erased_component.hpp"
 
-using EntityID = u_int32_t;
+using EntityID = uint32_t;
 class ArchTypeStorage {
 public:
-    u_int32_t newRow(EntityID entity);
+    uint32_t newRow(EntityID entity);
 
     template <typename T>
     bool hasComponent();
@@ -35,7 +36,7 @@ public:
 
     std::vector<EntityID>& entities();
 
-    void removeRow(u_int32_t rowIndex);
+    void removeRow(uint32_t rowIndex);
 
     std::vector<std::type_index>& componentTypes();
 
@@ -46,7 +47,7 @@ public:
     ArchTypeStorage clone(std::vector<std::type_index>& type);
 
     template <typename T>
-    void set(u_int32_t rowIndex, T component);
+    void set(uint32_t rowIndex, T component);
 
     template <typename T>
     void set(T component);
@@ -63,7 +64,7 @@ public:
     ErasedComponentStorage* getComponent(std::type_index& type);
 
     template <typename T>
-    T& getRow(u_int32_t rowIndex);
+    T& getRow(uint32_t rowIndex);
 
 private:
     u_int64_t mHash = 0;
@@ -71,8 +72,8 @@ private:
     std::vector<std::type_index> mComponentTypes;
     ArrayHashMap<std::type_index, ErasedComponentStorage> mComponents;
 
-    // TODO: Use a set for tag components since they require no data. Treating them as regular components would waste 1 byte per entity
-    // that is assigned the tag.
+    // TODO: Use a set for tag components since they require no data. Treating them as regular components would waste 1
+    // byte per entity that is assigned the tag.
     std::unordered_set<std::type_index> mTagComponents;
 };
 

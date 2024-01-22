@@ -1,9 +1,12 @@
 #pragma once
-#include "entities.hpp"
+#include <cstdint>
 
+#include "entities.hpp"
 class Command {
 public:
-    void fill(Entities* world) { mWorld = world; }
+    void fill(Entities* world) {
+        mWorld = world;
+    }
 
     template <typename... T>
     EntityID spawn(T... args) {

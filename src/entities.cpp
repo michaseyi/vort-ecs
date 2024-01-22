@@ -2,41 +2,45 @@
 
 #if defined(EMSCRIPTEN)
 #include <emscripten/emscripten.h>
+
+#include "javascript_bindings.hpp"
 #endif
 
 #include <set>
 
 #ifdef ENTITIES_TEMPLATE_IMPL
 
-template <typename... T>
-Entities& Entities::addSystems(SystemSchedule) {
-    return *this;
-}
-
 template <typename... Args, typename... Rest>
 Entities& Entities::addSystems(SystemSchedule schedule, System<Args...> system, Rest... rest) {
     static_assert((std::is_default_constructible_v<std::remove_reference_t<Args>> && ...));
     auto systemCaller = [this, system]() {
-        auto args = std::make_tuple(std::remove_reference_t<Args>()...);
-
-        (std::get<std::remove_reference_t<Args>>(args).fill(this), ...);
-
-        system(std::get<std::remove_reference_t<Args>>(args)...);
+        if constexpr (sizeof...(Args) > 0) {
+            auto args = std::make_tuple(std::remove_reference_t<Args>()...);
+            (std::get<std::remove_reference_t<Args>>(args).fill(this), ...);
+            system(std::get<std::remove_reference_t<Args>>(args)...);
+        } else {
+            system();
+        }
     };
 
     switch (schedule) {
-    case SystemSchedule::Startup:
-        mStartupSystems.emplace_back(systemCaller);
-        break;
-    case SystemSchedule::Update:
-        mUpdateSystems.emplace_back(systemCaller);
-        break;
-    case SystemSchedule::Shutdown:
-        mShutdownSystems.emplace_back(systemCaller);
-        break;
+    case SystemSchedule::Startup: mStartupSystems.emplace_back(systemCaller); break;
+    case SystemSchedule::Update: mUpdateSystems.emplace_back(systemCaller); break;
+    case SystemSchedule::Shutdown: mShutdownSystems.emplace_back(systemCaller); break;
     }
-    addSystems(schedule, rest...);
+
+    if constexpr (sizeof...(Rest) > 0) {
+        addSystems(schedule, rest...);
+    }
     return *this;
+}
+
+template <typename... T>
+Query<T...> Entities::query() {
+    Query<T...> result{};
+
+    result.fill(this);
+    return result;
 }
 
 template <typename... T>
@@ -45,13 +49,22 @@ void Entities::setGlobal(T... args) {
         [&]() {
             auto index = std::type_index(typeid(T));
             if (auto iter = mGlobalVariables.find(index); iter != mGlobalVariables.end()) {
-                auto a = iter->second;
                 *(reinterpret_cast<T*>(iter->second.get())) = std::move(args);
             } else {
                 mGlobalVariables[std::type_index(typeid(T))] = std::make_shared<T>(std::move(args));
             }
         }(),
         ...);
+}
+
+template <typename... T>
+Entities& Entities::addPlugin(Plugin plugin, T... rest) {
+    mPlugins.push_back(std::move(plugin));
+
+    if constexpr (sizeof...(T) > 0) {
+        addPlugin(rest...);
+    }
+    return *this;
 }
 
 template <typename... T>
@@ -79,6 +92,7 @@ void Entities::setComponents(EntityID entityID, T... components) {
 
     if (entityArchType.hasComponents<T...>()) {
         (entityArchType.set<T>(rowIndex, std::move(components)), ...);
+        // auto a = getComponents<T...>(entityID);
     } else {
         // This has to be done incase some of the component to be added already exists in the current archtype
         // of the entity
@@ -205,21 +219,53 @@ void Entities::removeComponents(EntityID entityID) {
     }
     prevArchtype.removeRow(rowIndexInCurrentArchType);
 }
+
+template <typename T>
+void Entities::traverse(std::function<T(Entities&, EntityID, T)> callback, T startValue, EntityID rootEntityID) {
+    auto& children = getChildren(rootEntityID);
+
+    auto updatedValue =
+        rootEntityID == Entities::ROOT_ENTITY_ID ? startValue : callback(*this, rootEntityID, startValue);
+
+    for (auto child : children) {
+        traverse(callback, updatedValue, child);
+    }
+}
+
+template <typename... T>
+bool Entities::hasComponents(EntityID entityID) {
+    auto& archtype = archtypeFromEntityID(entityID);
+    return archtype.hasComponents<T...>();
+}
+
 #else
 
 Entities::Entities() {
-    mArchtypes.put(Entities::voidArchtypeHash, ArchTypeStorage{});
-    setGlobal(Running{true});
+    mArchtypes.put(Entities::VOID_ARCHTYPE_HASH, ArchTypeStorage{});
+
+    setGlobal(AppState{.initialized = false, .initializationStage = "Creating World", .running = true});
 };
 
-EntityID Entities::newEntity() {
-    auto newEntityID = mEntityCount++;
-    auto voidArchType = mArchtypes.get(Entities::voidArchtypeHash);
+EntityID Entities::newEntity(EntityID parentID) {
+    mEntityCount++;
 
+    EntityID newEntityID;
+
+    if (mReusableEntityIDs.size() > 1) {
+        newEntityID = *mReusableEntityIDs.begin();
+
+        mReusableEntityIDs.erase(newEntityID);
+    } else {
+        newEntityID = mNextEntityId++;
+    }
+
+    auto voidArchType = mArchtypes.get(Entities::VOID_ARCHTYPE_HASH);
     auto entityRowIndex = voidArchType->newRow(newEntityID);
-
     mEntities[newEntityID] = {.archtypeIndex = 0, .rowIndex = entityRowIndex};
 
+    mChildrenMap[parentID].push_back(newEntityID);
+
+    mParentMap[newEntityID] = parentID;
     return newEntityID;
 }
 
@@ -230,10 +276,23 @@ void Entities::update() {
 }
 
 void Entities::run() {
+    auto [appState] = getGlobal<AppState>();
+
+    appState.initializationStage = "Running plugins";
+
+    // build plugins
+    for (auto& plugin : mPlugins) {
+        plugin(*this);
+    }
+
+    appState.initializationStage = "Running startup systems";
+
     for (auto& system : mStartupSystems) {
         system();
     }
 
+    appState.initializationStage = "Initialized";
+    appState.initialized = true;
 #if defined(EMSCRIPTEN)
     emscripten_set_main_loop_arg(
         [](void* userData) {
@@ -242,11 +301,9 @@ void Entities::run() {
         },
         (void*)this, 0, true);
 #else
-    bool running = std::get<0>(getGlobal<Running>()).value;
 
-    while (running) {
+    while (appState.running) {
         update();
-        running = std::get<0>(getGlobal<Running>()).value;
     }
 
     for (auto& system : mShutdownSystems) {
@@ -256,13 +313,65 @@ void Entities::run() {
 #endif
 }
 
-// TODO
-EntityID Entities::newEntity(EntityID parentID) { return parentID; }
+void Entities::removeEntity(EntityID entityID) {
+    assert(entityID != Entities::ROOT_ENTITY_ID);
 
-// TODO
-void Entities::removeEntity(EntityID entityID) { (void)entityID; }
+    _removeEntity(entityID, true);
+}
 
-std::vector<ArchTypeStorage>& Entities::archtypes() { return mArchtypes.values(); }
+void Entities::_removeEntity(EntityID entityID, bool removeFromParent) {
+    auto childrenIter = mChildrenMap.find(entityID);
+
+    if (childrenIter != mChildrenMap.end()) {
+        for (auto child : childrenIter->second) {
+            _removeEntity(child, false);
+        }
+    }
+
+    auto& archtype = archtypeFromEntityID(entityID);
+
+    auto& entityPtr = mEntities[entityID];
+
+    if (auto lastEntityID = archtype.entities().back(); lastEntityID != entityID) {
+        mEntities[lastEntityID].rowIndex = entityPtr.rowIndex;
+    }
+
+    archtype.removeRow(entityPtr.rowIndex);
+
+    mEntityCount--;
+
+    if (removeFromParent) {
+        auto& parentChildren = mChildrenMap[mParentMap[entityID]];
+
+        std::array<EntityID, 1> entityToSearch = {entityID};
+
+        auto entityIterInParent =
+            std::search(parentChildren.begin(), parentChildren.end(), entityToSearch.begin(), entityToSearch.end());
+
+        parentChildren.erase(entityIterInParent);
+    }
+    mEntities.erase(entityID);
+    mChildrenMap.erase(entityID);
+    mParentMap.erase(entityID);
+
+    mReusableEntityIDs.emplace(entityID);
+}
+
+EntityID Entities::getParent(EntityID entityID) {
+    return mParentMap[entityID];
+}
+
+uint32_t Entities::entityCount() {
+    return mEntityCount;
+}
+
+const std::vector<EntityID>& Entities::getChildren(EntityID entityID) {
+    return mChildrenMap[entityID];
+}
+
+std::vector<ArchTypeStorage>& Entities::archtypes() {
+    return mArchtypes.values();
+}
 
 ArchTypeStorage& Entities::archtypeFromEntityID(EntityID entityID) {
     auto entityIter = mEntities.find(entityID);
@@ -272,7 +381,7 @@ ArchTypeStorage& Entities::archtypeFromEntityID(EntityID entityID) {
     return mArchtypes.values()[entityIter->second.archtypeIndex];
 }
 
-u_int32_t Entities::entityRowFromID(EntityID entityID) {
+uint32_t Entities::entityRowFromID(EntityID entityID) {
     auto entityIter = mEntities.find(entityID);
 
     assert(entityIter != mEntities.end());

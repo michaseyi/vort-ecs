@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <iostream>
 #include <vector>
@@ -10,13 +11,14 @@ class ErasedComponentStorage {
 public:
     using Deleter = std::function<void(void*)>;
     using Cloner = std::function<void(ErasedComponentStorage&, ErasedComponentStorage&)>;
-    using Copier = std::function<void(ErasedComponentStorage&, u_int32_t, u_int32_t, ErasedComponentStorage&)>;
-    using Remover = std::function<void(ErasedComponentStorage&, u_int32_t)>;
+    using Copier = std::function<void(ErasedComponentStorage&, uint32_t, uint32_t, ErasedComponentStorage&)>;
+    using Remover = std::function<void(ErasedComponentStorage&, uint32_t)>;
 
     ErasedComponentStorage() = default;
 
     ErasedComponentStorage(void* rawPtr, Deleter deleter, Cloner cloner, Copier copier, Remover remover)
-        : mRaw(rawPtr), mDeleter(deleter), mCloner(cloner), mCopier(copier), mRemover(remover) {}
+        : mRaw(rawPtr), mDeleter(deleter), mCloner(cloner), mCopier(copier), mRemover(remover) {
+    }
 
     ErasedComponentStorage(ErasedComponentStorage&& rhs);
 
@@ -30,9 +32,9 @@ public:
     template <typename T>
     static ErasedComponentStorage create();
 
-    void copyFrom(u_int32_t srcRow, u_int32_t dstRow, ErasedComponentStorage& src);
+    void copyFrom(uint32_t srcRow, uint32_t dstRow, ErasedComponentStorage& src);
 
-    void remove(u_int32_t rowIndex);
+    void remove(uint32_t rowIndex);
 
     void cloneTo(ErasedComponentStorage& retval);
 

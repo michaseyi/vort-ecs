@@ -1,5 +1,6 @@
 #pragma once
 #include <cassert>
+#include <cstdint>
 #include <iostream>
 #include <vector>
 
@@ -8,13 +9,13 @@ class ComponentStorage {
     static_assert(std::is_default_constructible_v<T>);
 
 public:
-    u_int32_t put(T component);
+    uint32_t put(T component);
 
-    void remove(u_int32_t rowIndex);
+    void remove(uint32_t rowIndex);
 
-    void copyFrom(u_int32_t srcRow, u_int32_t dstRow, ComponentStorage<T>& src);
+    void copyFrom(uint32_t srcRow, uint32_t dstRow, ComponentStorage<T>& src);
 
-    T& operator[](u_int32_t rowIndex);
+    T& operator[](uint32_t rowIndex);
 
 private:
     std::vector<T> mEntries;

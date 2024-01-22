@@ -17,13 +17,13 @@ ErasedComponentStorage ErasedComponentStorage::create() {
                                         src.mCopier, src.mRemover};
     };
 
-    auto copy = [](ErasedComponentStorage& dst, u_int32_t srcRow, u_int32_t dstRow, ErasedComponentStorage& src) {
+    auto copy = [](ErasedComponentStorage& dst, uint32_t srcRow, uint32_t dstRow, ErasedComponentStorage& src) {
         ComponentStorage<T>& destination = *dst.cast<T>();
         ComponentStorage<T>& source = *src.cast<T>();
         destination.copyFrom(srcRow, dstRow, source);
     };
 
-    auto remove = [](ErasedComponentStorage& src, u_int32_t row) {
+    auto remove = [](ErasedComponentStorage& src, uint32_t row) {
         ComponentStorage<T>& source = *src.cast<T>();
         source.remove(row);
     };
@@ -59,11 +59,11 @@ ErasedComponentStorage::~ErasedComponentStorage() {
     }
 }
 
-void ErasedComponentStorage::copyFrom(u_int32_t srcRow, u_int32_t dstRow, ErasedComponentStorage& src) {
+void ErasedComponentStorage::copyFrom(uint32_t srcRow, uint32_t dstRow, ErasedComponentStorage& src) {
     mCopier(*this, srcRow, dstRow, src);
 }
 
-void ErasedComponentStorage::remove(u_int32_t rowIndex) { mRemover(*this, rowIndex); }
+void ErasedComponentStorage::remove(uint32_t rowIndex) { mRemover(*this, rowIndex); }
 
 void ErasedComponentStorage::cloneTo(ErasedComponentStorage& retval) { mCloner(*this, retval); }
 #endif

@@ -1,14 +1,14 @@
 #pragma once
+#include <cstdint>
 #include <exception>
 #include <iostream>
 #include <unordered_map>
 #include <vector>
-
 template <typename K, typename V>
 class ArrayHashMap {
 public:
     template <typename _K, typename _V>
-    u_int32_t put(_K&& key, _V value) {
+    uint32_t put(_K&& key, _V value) {
         return _put(std::forward<_K&>(key), std::move(value));
     }
 
@@ -25,12 +25,16 @@ public:
         return nullptr;
     }
 
-    std::vector<V>& values() { return mStorage; }
+    std::vector<V>& values() {
+        return mStorage;
+    }
 
-    inline u_int32_t denseStorageIndex(K key) { return mIndexMap[key]; }
+    inline uint32_t denseStorageIndex(K key) {
+        return mIndexMap[key];
+    }
 
 private:
-    u_int32_t _put(const K& key, V value) {
+    uint32_t _put(const K& key, V value) {
         if (auto indexIter = mIndexMap.find(key); indexIter != mIndexMap.end()) {
             mStorage[indexIter->second] = std::move(value);
             return indexIter->second;
@@ -43,5 +47,5 @@ private:
     }
 
     std::vector<V> mStorage;
-    std::unordered_map<K, u_int32_t> mIndexMap;
+    std::unordered_map<K, uint32_t> mIndexMap;
 };

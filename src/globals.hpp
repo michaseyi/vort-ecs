@@ -1,6 +1,6 @@
 #pragma once
+#include <cstdint>
 #include <iostream>
-
 template <typename... T>
 class Global {
 public:
@@ -9,10 +9,16 @@ public:
         mWorld = world;
         auto globals = mWorld->getGlobal<T...>();
 
-        ([&]() { std::get<T *>(mValues) = &std::get<T &>(globals); }(), ...);
+        (
+            [&]() {
+                std::get<T *>(mValues) = &std::get<T &>(globals);
+            }(),
+            ...);
     }
 
-    const std::tuple<T *...> &values() const { return mValues; }
+    const std::tuple<T *...> &values() const {
+        return mValues;
+    }
 
 private:
     std::tuple<T *...> mValues;

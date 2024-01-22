@@ -1,35 +1,27 @@
 #pragma once
 #include <cassert>
 #include <chrono>
+#include <cstdint>
 #include <iostream>
+#include <limits>
+#include <map>
 #include <memory>
 #include <type_traits>
 
 #include "archtype.hpp"
 #include "array_hashmap.hpp"
-#include "limits"
 
-class Timer {
-public:
-    using clock = std::chrono::high_resolution_clock;
-    Timer() : mStart(clock::now()) {}
+template <typename... T>
+class Query;
 
-    template <typename T>
-    T elapsed() {
-        return std::chrono::duration_cast<T>(clock::now() - mStart);
-    }
-
-private:
-    std::chrono::time_point<clock> mStart;
+struct AppState {
+    bool initialized;
+    std::string initializationStage;
+    bool running;
 };
 
-struct Running {
-    bool value = true;
-};
-
-using EntityID = u_int32_t;
-template <typename... Args>
-using System = void (*)(Args...);
+// TODO: Temporary Entity ID solution. Replace with UUIDs;
+using EntityID = uint32_t;
 
 enum class SystemSchedule {
     Startup,
@@ -46,26 +38,22 @@ struct UniqueTypes<T, Rest...>
 
 class Entities {
 public:
+    template <typename... Args>
+    using System = void (*)(Args...);
+
+    using Plugin = std::function<void(Entities&)>;
+
+    const static inline uint64_t VOID_ARCHTYPE_HASH = std::numeric_limits<uint64_t>::max();
+
+    const static inline uint32_t ROOT_ENTITY_ID = 0;
+
     Entities(const Entities&) = delete;
 
-    static inline Entities* instancePtr = nullptr;
+    EntityID getParent(EntityID entityID);
 
-    static Entities& getInstance() {
-        if (!instancePtr) {
-            instancePtr = new Entities();
-        }
-        return *instancePtr;
-    };
+    const std::vector<EntityID>& getChildren(EntityID parentID = Entities::ROOT_ENTITY_ID);
 
-    static void deleteInstance() {
-        if (instancePtr) {
-            delete instancePtr;
-        }
-    }
-
-    EntityID newEntity();
-
-    EntityID newEntity(EntityID parentID);
+    EntityID newEntity(EntityID parentID = Entities::ROOT_ENTITY_ID);
 
     void removeEntity(EntityID entityID);
 
@@ -80,7 +68,7 @@ public:
 
     struct Pointer {
         u_int16_t archtypeIndex;
-        u_int32_t rowIndex;
+        uint32_t rowIndex;
     };
 
     std::vector<ArchTypeStorage>& archtypes();
@@ -88,7 +76,7 @@ public:
     void run();
 
     template <typename... T>
-    Entities& addSystems(SystemSchedule schedule);
+    Entities& addPlugin(Plugin plugin, T... rest);
 
     template <typename... Args, typename... Rest>
     Entities& addSystems(SystemSchedule schedule, System<Args...> system, Rest... rest);
@@ -99,26 +87,47 @@ public:
     template <typename... T>
     std::tuple<T&...> getGlobal();
 
+    template <typename... T>
+    Query<T...> query();
+
     void update();
 
-private:
+    uint32_t entityCount();
+
     Entities();
 
-    u_int32_t mEntityCount = 0;
-    std::unordered_map<EntityID, Pointer> mEntities;
-    ArrayHashMap<u_int64_t, ArchTypeStorage> mArchtypes;
+    template <typename... T>
+    bool hasComponents(EntityID entityID);
 
-    const static inline u_int64_t voidArchtypeHash = std::numeric_limits<u_int64_t>::max();
+    template <typename T>
+    void traverse(std::function<T(Entities&, EntityID, T)>, T, EntityID rootEntityID = Entities::ROOT_ENTITY_ID);
+
+private:
+    void _removeEntity(EntityID entityID, bool removeFromParent);
+
+    uint32_t mEntityCount = 0;
+    uint32_t mNextEntityId = 1;
+
+    std::unordered_map<EntityID, Pointer> mEntities;
+    ArrayHashMap<uint64_t, ArchTypeStorage> mArchtypes;
 
     ArchTypeStorage& archtypeFromEntityID(EntityID entityID);
 
-    u_int32_t entityRowFromID(EntityID entityID);
+    uint32_t entityRowFromID(EntityID entityID);
 
     std::unordered_map<std::type_index, std::shared_ptr<void>> mGlobalVariables;
 
     std::vector<std::function<void(void)>> mStartupSystems;
     std::vector<std::function<void(void)>> mUpdateSystems;
     std::vector<std::function<void(void)>> mShutdownSystems;
+
+    std::vector<Plugin> mPlugins;
+
+    std::map<EntityID, std::vector<EntityID>> mChildrenMap;
+
+    std::map<EntityID, EntityID> mParentMap;
+
+    std::unordered_set<EntityID> mReusableEntityIDs;
 };
 
 #define ENTITIES_TEMPLATE_IMPL

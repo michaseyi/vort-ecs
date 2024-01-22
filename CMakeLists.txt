@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.2)
 project(vort-ecs)
 
 add_library(vort-ecs)
-# add_executable(vort-ecs)
+# add_executable(vort-ecs main.cpp)
 
 file(GLOB_RECURSE VORT_ECS_SOURCES src/**.cpp)
 target_sources(vort-ecs PRIVATE ${VORT_ECS_SOURCES})

@@ -2,7 +2,7 @@
 
 #ifdef ARCHTYPE_TEMPLATE_IMPL
 template <typename T>
-void ArchTypeStorage::set(u_int32_t rowIndex, T component) {
+void ArchTypeStorage::set(uint32_t rowIndex, T component) {
     assert(mEntityIDs.size() > rowIndex);
 
     auto index = std::type_index(typeid(T));
@@ -59,14 +59,14 @@ u_int64_t ArchTypeStorage::computeHash() {
 }
 
 template <typename T>
-T& ArchTypeStorage::getRow(u_int32_t rowIndex) {
+T& ArchTypeStorage::getRow(uint32_t rowIndex) {
     auto index = std::type_index(typeid(T));
     return (*getComponent(index)->cast<T>())[rowIndex];
 }
 
 #else
 
-u_int32_t ArchTypeStorage::newRow(EntityID entity) {
+uint32_t ArchTypeStorage::newRow(EntityID entity) {
     auto newRowIndex = mEntityIDs.size();
     mEntityIDs.emplace_back(entity);
     return newRowIndex;
@@ -98,7 +98,7 @@ u_int64_t ArchTypeStorage::getHash() { return mHash; }
 
 std::vector<EntityID>& ArchTypeStorage::entities() { return mEntityIDs; }
 
-void ArchTypeStorage::removeRow(u_int32_t rowIndex) {
+void ArchTypeStorage::removeRow(uint32_t rowIndex) {
     assert(mEntityIDs.size() > rowIndex);
 
     std::swap(mEntityIDs[rowIndex], mEntityIDs.back());
